@@ -1,81 +1,86 @@
 {
-  "name": "Ритм — планировщик",
-  "short_name": "Ритм",
-  "description": "Задачи, тайм-блоки, ритуалы дня, матрица, привычки, цели, заметки и фокус-таймер.",
-  "lang": "ru",
-  "start_url": "./index.html",
-  "scope": "./",
-  "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#F3EFE6",
-  "theme_color": "#F3EFE6",
-  "icons": [
-    {
-      "src": "icons/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icons/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
-  ],
-  "shortcuts": [
-    {
-      "name": "Новая задача",
-      "short_name": "Задача",
-      "url": "./index.html?new=task",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Разгрузить голову",
-      "short_name": "Разгрузка",
-      "url": "./index.html?new=dump",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "План дня",
-      "short_name": "План",
-      "url": "./index.html#plan",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    },
-    {
-      "name": "Итоги дня",
-      "short_name": "Итоги",
-      "url": "./index.html#review",
-      "icons": [
-        {
-          "src": "icons/icon-192.png",
-          "sizes": "192x192"
-        }
-      ]
-    }
-  ],
-  "share_target": {
-    "action": "./index.html",
-    "method": "GET",
-    "params": {
-      "title": "title",
-      "text": "text",
-      "url": "url"
-    }
+ "name": "Ритм — планировщик",
+ "short_name": "Ритм",
+ "description": "Задачи, тайм-блоки, ритуалы дня, матрица, привычки, цели, заметки и фокус-таймер.",
+ "lang": "ru",
+ "start_url": "./index.html",
+ "scope": "./",
+ "display": "standalone",
+ "orientation": "portrait",
+ "background_color": "#F3EFE6",
+ "theme_color": "#F3EFE6",
+ "icons": [
+  {
+   "src": "icons/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png",
+   "purpose": "any maskable"
+  },
+  {
+   "src": "icons/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any maskable"
   }
+ ],
+ "shortcuts": [
+  {
+   "name": "Новая задача",
+   "short_name": "Задача",
+   "url": "./index.html?new=task",
+   "icons": [
+    {
+     "src": "icons/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  },
+  {
+   "name": "Разгрузить голову",
+   "short_name": "Разгрузка",
+   "url": "./index.html?new=dump",
+   "icons": [
+    {
+     "src": "icons/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  },
+  {
+   "name": "План дня",
+   "short_name": "План",
+   "url": "./index.html#plan",
+   "icons": [
+    {
+     "src": "icons/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  },
+  {
+   "name": "Итоги дня",
+   "short_name": "Итоги",
+   "url": "./index.html#review",
+   "icons": [
+    {
+     "src": "icons/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  },
+  {
+   "name": "Расход",
+   "short_name": "Расход",
+   "url": "./index.html?new=money"
+  }
+ ],
+ "share_target": {
+  "action": "./index.html",
+  "method": "GET",
+  "params": {
+   "title": "title",
+   "text": "text",
+   "url": "url"
+  }
+ }
 }
