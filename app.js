@@ -1465,7 +1465,7 @@ function applyRemote(items){
  items.forEach(it=>{
   const ent=it.entity,id=String(it.id);
   if(!ALL_E.includes(ent))return;
-  const ua=it.updatedAt||nowIso;
+  const ua=(it.updatedAt?new Date(it.updatedAt).toISOString():nowIso);
   if(it.deletedAt||it.data==null){
    if(ARR_E.includes(ent)){
     const i=(S[ent]||[]).findIndex(x=>String(x.id)===id);
@@ -1512,7 +1512,7 @@ async function api(path,opts){
  try{
   const headers=Object.assign({'Content-Type':'application/json'},(opts&&opts.headers)||{});
   if(syncMeta.token)headers.Authorization='Bearer '+syncMeta.token;
-  const r=await fetch(API_BASE+path,{method:(opts&&opts.method)||'GET',headers,body:opts&&opts.body?JSON.stringify(opts.body):undefined,signal:ctrl.signal});
+  const r=await fetch(API_BASE+path,{method:(opts&&opts.method)||'GET',headers,body:opts&&opts.body?JSON.stringify(opts.body):undefined,signal:ctrl.signal,cache:'no-store'});
   const text=await r.text();
   let j=null;try{j=JSON.parse(text)}catch(e){j={error:text||('HTTP '+r.status)}}
   if(!r.ok){const err=new Error((j&&j.error)||('HTTP '+r.status));err.status=r.status;err.body=j;throw err}
