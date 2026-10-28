@@ -1526,27 +1526,25 @@ async function doSync(reason){
  if(syncBusy){syncQueued=true;return}
  syncBusy=true;setSyncStatus(reason==='wake'?'connecting':'syncing');
  try{
-  // push then pull
-  const changes=collectChanges(true);
-  if(changes.length){
-   const push=await api('/sync',{method:'POST',body:{changes}});
-   if(push&&push.serverTime){/* ok */}
-   // clear tombs that were pushed
-   syncMeta.tomb=[];
-  }
+  // pull first (merge remote), then push local winners — avoids stale overwrite
   const pull=await api('/sync?since='+encodeURIComponent(syncMeta.since||'1970-01-01T00:00:00.000Z'));
   const ch=applyRemote(pull.items||[]);
   if(pull.serverTime)syncMeta.since=pull.serverTime;
+  if(ch){rememberItems();save();applyTheme();render()}
+  const changes=collectChanges(true);
+  if(changes.length){
+   await api('/sync',{method:'POST',body:{changes}});
+   syncMeta.tomb=[];
+  }
   syncMeta.lastOk=new Date().toISOString();
   saveSyncMeta();
-  if(ch){rememberItems();save();applyTheme();render()}
   setSyncStatus('ok');
  }catch(e){
   if(e.status===401){syncMeta.token=null;syncMeta.email=null;saveSyncMeta();setSyncStatus('out','Сессия истекла');toast('Войдите снова');return}
   setSyncStatus('err',e.name==='AbortError'?'подключение…':(e.message||'Ошибка сети'));
  }finally{syncBusy=false;if(syncQueued){syncQueued=false;setTimeout(()=>doSync('queue'),80)}}
 }
-function scheduleSync(ms){
+function scheduleSyncfunction scheduleSync(ms){
  if(!syncMeta.token)return;
  clearTimeout(syncTimer);
  syncTimer=setTimeout(()=>doSync('debounce'),ms==null?1200:ms);
