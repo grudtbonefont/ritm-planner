@@ -1544,7 +1544,7 @@ async function doSync(reason){
  }catch(e){
   if(e.status===401){syncMeta.token=null;syncMeta.email=null;saveSyncMeta();setSyncStatus('out','Сессия истекла');toast('Войдите снова');return}
   setSyncStatus('err',e.name==='AbortError'?'подключение…':(e.message||'Ошибка сети'));
- }finally{syncBusy=false}
+ }finally{syncBusy=false;if(syncQueued){syncQueued=false;setTimeout(()=>doSync('queue'),80)}}
 }
 function scheduleSync(ms){
  if(!syncMeta.token)return;
