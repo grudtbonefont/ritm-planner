@@ -1537,7 +1537,7 @@ async function doSync(reason){
   if(pull.serverTime)syncMeta.since=pull.serverTime;
   syncMeta.lastOk=new Date().toISOString();
   saveSyncMeta();
-  if(ch){save();applyTheme();render()}
+  if(ch){rememberItems();save();applyTheme();render()}
   setSyncStatus('ok');
  }catch(e){
   if(e.status===401){syncMeta.token=null;syncMeta.email=null;saveSyncMeta();setSyncStatus('out','Сессия истекла');toast('Войдите снова');return}
@@ -1559,7 +1559,9 @@ async function authRegister(email,password){
  setSyncStatus('connecting');
  const j=await api('/auth/register',{method:'POST',body:{email,password}});
  syncMeta.token=j.token;syncMeta.email=j.user.email;syncMeta.since='1970-01-01T00:00:00.000Z';saveSyncMeta();
- syncOffer=true;setSyncStatus('ok');startSyncLoop();
+ const localN=ARR_E.reduce((a,k)=>a+(S[k]||[]).length,0);
+ syncOffer=localN>0;setSyncStatus('ok');
+ if(syncOffer){/* wait */}else startSyncLoop();
 }
 async function authLogin(email,password){
  setSyncStatus('connecting');
@@ -1585,17 +1587,38 @@ async function skipUpload(){
  await doSync('open');toast('Синхронизация без полной выгрузки');
 }
 
+let _prevItems={};
+function rememberItems(){
+ _prevItems={};
+ ARR_E.forEach(ent=>{(S[ent]||[]).forEach(x=>{
+  if(!x||x.id==null)return;
+  _prevItems[ent+'\0'+String(x.id)]=JSON.stringify(x);
+ })});
+}
 const _save=save;
 save=function(){
+ const now=new Date().toISOString();
  try{
-  // stamp singletons and arrays lightly
-  if(arguments.length===0){
-   ARR_E.forEach(k=>{(S[k]||[]).forEach(x=>{if(x&&!x.updatedAt)x.updatedAt=new Date().toISOString()})});
-  }
+  ARR_E.forEach(ent=>{(S[ent]||[]).forEach(x=>{
+   if(!x||x.id==null)return;
+   const k=ent+'\0'+String(x.id);
+   const ser=JSON.stringify(Object.assign({},x,{updatedAt:x.updatedAt||null}));
+   const prev=_prevItems[k];
+   if(!prev){if(!x.updatedAt)x.updatedAt=now;_prevItems[k]=JSON.stringify(x);return}
+   // compare without updatedAt noise
+   const strip=o=>{const c=JSON.parse(JSON.stringify(o));delete c.updatedAt;return JSON.stringify(c)};
+   if(strip(JSON.parse(prev))!==strip(x)){x.updatedAt=now}
+   else if(!x.updatedAt)x.updatedAt=now;
+   _prevItems[k]=JSON.stringify(x);
+  })});
+  MAP_E.forEach(ent=>{const o=S[ent]||{};Object.keys(o).forEach(id=>{
+   const v=o[id];if(v&&typeof v==='object'&&!v.updatedAt)v.updatedAt=now;
+  })});
  }catch(e){}
  _save();
  if(syncMeta.token)scheduleSync();
 };
+rememberItems();
 
 V.account=()=>{
  const on=!!syncMeta.token;
