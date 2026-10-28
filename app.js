@@ -1435,7 +1435,7 @@ function ensureTimes(){
 function collectChanges(full){
  ensureTimes();
  const out=[];
- ARR_E.forEach(ent=>{(S[ent]||[]).forEach(x=>{if(!x||!x.id)return;out.push({entity:ent,id:String(x.id),data:x,updatedAt:x.updatedAt||new Date().toISOString()})})});
+ ARR_E.forEach(ent=>{(S[ent]||[]).forEach(x=>{if(!x||!x.id)return;if(!x.updatedAt)x.updatedAt=new Date().toISOString();out.push({entity:ent,id:String(x.id),data:x,updatedAt:x.updatedAt})})});
  MAP_E.forEach(ent=>{const o=S[ent]||{};Object.keys(o).forEach(id=>{
   const v=o[id];const ua=(v&&typeof v==='object'&&v.updatedAt)||(full?new Date().toISOString():null);
   if(!ua&&!full)return;
@@ -1520,8 +1520,10 @@ async function api(path,opts){
  }finally{clearTimeout(t)}
 }
 function setSyncStatus(st,err){syncStatus=st;syncErr=err||'';if(ui.view==='account'||ui.view==='settings')try{render()}catch(e){}}
+let syncQueued=false;
 async function doSync(reason){
- if(!syncMeta.token||syncBusy)return;
+ if(!syncMeta.token)return;
+ if(syncBusy){syncQueued=true;return}
  syncBusy=true;setSyncStatus(reason==='wake'?'connecting':'syncing');
  try{
   // push then pull
