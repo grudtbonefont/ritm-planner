@@ -1404,6 +1404,316 @@ document.addEventListener('change',e=>{const el=e.target;
  if(el.dataset.ch==='hT'){const h=H(todayS());h[el.dataset.k]=el.value;save();e.stopImmediatePropagation();render()}
  else if(el.dataset.ch==='glassMl'){S.settings.glassMl=+el.value;save();e.stopImmediatePropagation();render()}},true);
 
+/* ===== v6: аккаунт и синхронизация ===== */
+Object.assign(IC,{
+ user:'<circle cx="12" cy="8.5" r="3.5"/><path d="M5 19.5c1.8-3.2 4.2-4.5 7-4.5s5.2 1.3 7 4.5"/>',
+ cloud:'<path d="M7.5 17.5h10a4 4 0 0 0 .4-8 5.5 5.5 0 0 0-10.6-1.5A3.5 3.5 0 0 0 7.5 17.5z"/>',
+ sync:'<path d="M19.5 12a7.5 7.5 0 0 1-12.8 5.3M4.5 12A7.5 7.5 0 0 1 17.3 6.7"/><path d="M19.5 7.5V12h-4.5M4.5 16.5V12H9"/>'
+});
+const API_BASE=(typeof location!=='undefined'&&/localhost|127\.0\.0\.1/.test(location.hostname))
+  ? (localStorage.getItem('ritm.api')||'https://ritm-api-3wh7.onrender.com')
+  : 'https://ritm-api-3wh7.onrender.com';
+const SYNC_KEY='ritm.sync.v1';
+const ARR_E=['tasks','events','habits','goals','notes','templates','countdowns','spaces','lessons','homework','exams','money'];
+const MAP_E=['log','journal','ach','stats','health','budgets'];
+const ONE_E=['settings','timer','focus','tags','space','clean'];
+const ALL_E=ARR_E.concat(MAP_E,ONE_E);
+let syncMeta=null,syncBusy=false,syncTimer=null,syncPoll=null,syncStatus='idle',syncErr='',syncOffer=false;
+function loadSyncMeta(){
+ try{syncMeta=JSON.parse(localStorage.getItem(SYNC_KEY)||'null')}catch(e){syncMeta=null}
+ if(!syncMeta||typeof syncMeta!=='object')syncMeta={token:null,email:null,since:'1970-01-01T00:00:00.000Z',lastOk:null,tomb:[]};
+ if(!Array.isArray(syncMeta.tomb))syncMeta.tomb=[];
+}
+function saveSyncMeta(){try{localStorage.setItem(SYNC_KEY,JSON.stringify(syncMeta))}catch(e){}}
+loadSyncMeta();
+function touch(x){if(x&&typeof x==='object')x.updatedAt=new Date().toISOString();return x}
+function ensureTimes(){
+ const now=new Date().toISOString();
+ ARR_E.forEach(k=>{(S[k]||[]).forEach(x=>{if(x&&!x.updatedAt)x.updatedAt=now})});
+ MAP_E.forEach(k=>{const o=S[k]||{};Object.keys(o).forEach(id=>{const v=o[id];if(v&&typeof v==='object'&&!Array.isArray(v)&&!v.updatedAt)v.updatedAt=now})});
+}
+function collectChanges(full){
+ ensureTimes();
+ const out=[];
+ ARR_E.forEach(ent=>{(S[ent]||[]).forEach(x=>{if(!x||!x.id)return;out.push({entity:ent,id:String(x.id),data:x,updatedAt:x.updatedAt||new Date().toISOString()})})});
+ MAP_E.forEach(ent=>{const o=S[ent]||{};Object.keys(o).forEach(id=>{
+  const v=o[id];const ua=(v&&typeof v==='object'&&v.updatedAt)||(full?new Date().toISOString():null);
+  if(!ua&&!full)return;
+  out.push({entity:ent,id:String(id),data:v,updatedAt:ua||new Date().toISOString()});
+ })});
+ ONE_E.forEach(ent=>{
+  const v=S[ent];
+  const ua=(v&&typeof v==='object'&&!Array.isArray(v)&&v.updatedAt)||syncMeta._one&&syncMeta._one[ent]||new Date().toISOString();
+  if(!syncMeta._one)syncMeta._one={};syncMeta._one[ent]=ua;
+  out.push({entity:ent,id:'_',data:v,updatedAt:ua});
+ });
+ (syncMeta.tomb||[]).forEach(t=>out.push({entity:t.entity,id:String(t.id),data:null,updatedAt:t.updatedAt,deletedAt:t.updatedAt}));
+ return out;
+}
+function markOne(ent){if(!syncMeta._one)syncMeta._one={};syncMeta._one[ent]=new Date().toISOString();saveSyncMeta()}
+function tomb(entity,id){
+ const ua=new Date().toISOString();
+ syncMeta.tomb=syncMeta.tomb.filter(t=>!(t.entity===entity&&String(t.id)===String(id)));
+ syncMeta.tomb.push({entity,id:String(id),updatedAt:ua});
+ if(syncMeta.tomb.length>2000)syncMeta.tomb=syncMeta.tomb.slice(-1500);
+ saveSyncMeta();scheduleSync();
+}
+function applyRemote(items){
+ if(!items||!items.length)return false;
+ let changed=false;
+ const nowIso=new Date().toISOString();
+ items.forEach(it=>{
+  const ent=it.entity,id=String(it.id);
+  if(!ALL_E.includes(ent))return;
+  const ua=it.updatedAt||nowIso;
+  if(it.deletedAt||it.data==null){
+   if(ARR_E.includes(ent)){
+    const i=(S[ent]||[]).findIndex(x=>String(x.id)===id);
+    if(i>=0){const loc=S[ent][i];if(!loc.updatedAt||loc.updatedAt<=ua){S[ent].splice(i,1);changed=true}}
+   }else if(MAP_E.includes(ent)){
+    const loc=S[ent]&&S[ent][id];
+    if(S[ent]&&Object.prototype.hasOwnProperty.call(S[ent],id)){
+     if(!loc||typeof loc!=='object'||!loc.updatedAt||loc.updatedAt<=ua){delete S[ent][id];changed=true}
+    }
+   }else if(ONE_E.includes(ent)&&id==='_'){
+    /* ignore delete of singleton */
+   }
+   syncMeta.tomb=syncMeta.tomb.filter(t=>!(t.entity===ent&&String(t.id)===id));
+   return;
+  }
+  const data=it.data;
+  if(ARR_E.includes(ent)){
+   if(!Array.isArray(S[ent]))S[ent]=[];
+   const i=S[ent].findIndex(x=>String(x.id)===id);
+   if(i<0){S[ent].push(Object.assign({},data,{updatedAt:ua}));changed=true}
+   else{const loc=S[ent][i];if(!loc.updatedAt||loc.updatedAt<=ua){S[ent][i]=Object.assign({},data,{updatedAt:ua});changed=true}}
+  }else if(MAP_E.includes(ent)){
+   if(!S[ent]||typeof S[ent]!=='object')S[ent]={};
+   const loc=S[ent][id];
+   if(!loc||typeof loc!=='object'||!loc.updatedAt||loc.updatedAt<=ua){
+    S[ent][id]=(data&&typeof data==='object'&&!Array.isArray(data))?Object.assign({},data,{updatedAt:ua}):data;
+    changed=true;
+   }
+  }else if(ONE_E.includes(ent)&&id==='_'){
+   const locUa=syncMeta._one&&syncMeta._one[ent];
+   if(!locUa||locUa<=ua){
+    if(ent==='settings')S.settings=Object.assign(defaults().settings,data||{});
+    else S[ent]=data;
+    if(!syncMeta._one)syncMeta._one={};syncMeta._one[ent]=ua;
+    changed=true;
+   }
+  }
+ });
+ return changed;
+}
+async function api(path,opts){
+ const ctrl=new AbortController();
+ const t=setTimeout(()=>ctrl.abort(),90000);
+ try{
+  const headers=Object.assign({'Content-Type':'application/json'},(opts&&opts.headers)||{});
+  if(syncMeta.token)headers.Authorization='Bearer '+syncMeta.token;
+  const r=await fetch(API_BASE+path,{method:(opts&&opts.method)||'GET',headers,body:opts&&opts.body?JSON.stringify(opts.body):undefined,signal:ctrl.signal});
+  const text=await r.text();
+  let j=null;try{j=JSON.parse(text)}catch(e){j={error:text||('HTTP '+r.status)}}
+  if(!r.ok){const err=new Error((j&&j.error)||('HTTP '+r.status));err.status=r.status;err.body=j;throw err}
+  return j;
+ }finally{clearTimeout(t)}
+}
+function setSyncStatus(st,err){syncStatus=st;syncErr=err||'';if(ui.view==='account'||ui.view==='settings')try{render()}catch(e){}}
+async function doSync(reason){
+ if(!syncMeta.token||syncBusy)return;
+ syncBusy=true;setSyncStatus(reason==='wake'?'connecting':'syncing');
+ try{
+  // push then pull
+  const changes=collectChanges(true);
+  if(changes.length){
+   const push=await api('/sync',{method:'POST',body:{changes}});
+   if(push&&push.serverTime){/* ok */}
+   // clear tombs that were pushed
+   syncMeta.tomb=[];
+  }
+  const pull=await api('/sync?since='+encodeURIComponent(syncMeta.since||'1970-01-01T00:00:00.000Z'));
+  const ch=applyRemote(pull.items||[]);
+  if(pull.serverTime)syncMeta.since=pull.serverTime;
+  syncMeta.lastOk=new Date().toISOString();
+  saveSyncMeta();
+  if(ch){save();applyTheme();render()}
+  setSyncStatus('ok');
+ }catch(e){
+  if(e.status===401){syncMeta.token=null;syncMeta.email=null;saveSyncMeta();setSyncStatus('out','Сессия истекла');toast('Войдите снова');return}
+  setSyncStatus('err',e.name==='AbortError'?'подключение…':(e.message||'Ошибка сети'));
+ }finally{syncBusy=false}
+}
+function scheduleSync(ms){
+ if(!syncMeta.token)return;
+ clearTimeout(syncTimer);
+ syncTimer=setTimeout(()=>doSync('debounce'),ms==null?1200:ms);
+}
+function startSyncLoop(){
+ clearInterval(syncPoll);
+ if(!syncMeta.token)return;
+ doSync('open');
+ syncPoll=setInterval(()=>doSync('poll'),60000);
+}
+async function authRegister(email,password){
+ setSyncStatus('connecting');
+ const j=await api('/auth/register',{method:'POST',body:{email,password}});
+ syncMeta.token=j.token;syncMeta.email=j.user.email;syncMeta.since='1970-01-01T00:00:00.000Z';saveSyncMeta();
+ syncOffer=true;setSyncStatus('ok');startSyncLoop();
+}
+async function authLogin(email,password){
+ setSyncStatus('connecting');
+ const j=await api('/auth/login',{method:'POST',body:{email,password}});
+ syncMeta.token=j.token;syncMeta.email=j.user.email;saveSyncMeta();
+ // ask upload if local has data
+ const localN=ARR_E.reduce((a,k)=>a+(S[k]||[]).length,0);
+ syncOffer=localN>0;setSyncStatus('ok');
+ if(syncOffer){/* wait for user */}
+ else{syncMeta.since='1970-01-01T00:00:00.000Z';saveSyncMeta();startSyncLoop()}
+}
+function authLogout(){
+ syncMeta.token=null;syncMeta.email=null;syncMeta.since='1970-01-01T00:00:00.000Z';saveSyncMeta();
+ clearInterval(syncPoll);clearTimeout(syncTimer);setSyncStatus('out');toast('Вы вышли');render();
+}
+async function acceptUpload(){
+ syncOffer=false;syncMeta.since='1970-01-01T00:00:00.000Z';saveSyncMeta();
+ await doSync('upload');toast('Локальные данные отправлены');
+}
+async function skipUpload(){
+ syncOffer=false;syncMeta.since='1970-01-01T00:00:00.000Z';saveSyncMeta();
+ // pull remote over — still LWW merge
+ await doSync('open');toast('Синхронизация без полной выгрузки');
+}
+
+const _save=save;
+save=function(){
+ try{
+  // stamp singletons and arrays lightly
+  if(arguments.length===0){
+   ARR_E.forEach(k=>{(S[k]||[]).forEach(x=>{if(x&&!x.updatedAt)x.updatedAt=new Date().toISOString()})});
+  }
+ }catch(e){}
+ _save();
+ if(syncMeta.token)scheduleSync();
+};
+
+V.account=()=>{
+ const on=!!syncMeta.token;
+ const st=syncStatus==='connecting'||syncStatus==='syncing'?'подключение…'
+  :syncStatus==='ok'?(syncMeta.lastOk?'Синхронизировано · '+new Date(syncMeta.lastOk).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'В сети')
+  :syncStatus==='err'?(syncErr||'Ошибка'):'Не в сети';
+ return`${back('settings','Настройки')}<header class="hd" style="margin-top:0"><div><div class="eyebrow">Облако</div><h1 class="display">Аккаунт</h1></div></header>
+ <div class="card acct">
+  <div class="acct-st"><span class="dot ${syncStatus}"></span><span>${esc(st)}</span></div>
+  ${on?`<p class="muted" style="margin:8px 0 0">Вы вошли как <b>${esc(syncMeta.email||'')}</b></p>
+   <div class="rowbtns" style="margin-top:14px">
+    <button class="btn" data-a="syncNow">${I('sync')} Синхронизировать сейчас</button>
+    <button class="btn" data-a="logout">Выйти</button>
+   </div>`
+  :`<p class="muted" style="margin:8px 0 14px">Войдите, чтобы видеть и менять данные на разных устройствах. Без аккаунта всё работает локально.</p>
+   <form data-f="auth" class="authf">
+    <div class="field"><label>Email</label><input name="email" type="email" autocomplete="username" required placeholder="you@example.com"></div>
+    <div class="field"><label>Пароль</label><input name="password" type="password" autocomplete="current-password" required minlength="8" placeholder="минимум 8 символов"></div>
+    <div class="rowbtns"><button class="btn primary" name="mode" value="login" type="submit">Войти</button>
+    <button class="btn" name="mode" value="register" type="submit">Регистрация</button></div>
+   </form>`}
+  ${syncOffer?`<div class="card warn" style="margin-top:14px"><b>На этом устройстве есть данные</b><p class="muted">Загрузить их в аккаунт и объединить с облаком?</p>
+   <div class="rowbtns"><button class="btn primary" data-a="syncUpload">Загрузить и объединить</button>
+   <button class="btn" data-a="syncSkip">Только скачать</button></div></div>`:''}
+  <p class="hint" style="margin-top:18px">Сервер может «засыпать» на бесплатном тарифе — при первом запросе подождите около минуты («подключение…»).</p>
+ </div>`;
+};
+
+// Patch settings: account row + hint
+const _settings=V.settings;
+V.settings=()=>_settings()
+  .replace('<h3 class="sec">Данные</h3>',`<h3 class="sec">Аккаунт</h3><div class="set"><div class="set-row"><button class="rowbtn" data-a="go" data-v="account">${I('user')} Аккаунт${syncMeta.token?`<small>${esc(syncMeta.email||'синхронизация')}</small>`:'<small>вход и синхронизация</small>'}</button></div></div><h3 class="sec">Данные</h3>`)
+  .replace('данные хранятся только на этом устройстве · работает офлайн',
+    syncMeta.token?'синхронизация с аккаунтом · локальная копия всегда с вами':'данные на устройстве · аккаунт — по желанию');
+
+if(!SUB.includes('account'))SUB.push('account');
+const _fabHide=['more','stats','settings','focus','plan','review','week','now','achieve','health','account','spaces'];
+const _render0=render0;
+render0=function(anim){
+ _render0(anim);
+ try{$('#fab').classList.toggle('hide',_fabHide.includes(ui.view)||['health'].includes(ui.view))}catch(e){}
+};
+
+A.syncNow=()=>{if(!syncMeta.token)return go('account');toast('Синхронизация…');doSync('manual')};
+A.logout=()=>ask('Выйти из аккаунта?','Локальные данные на этом устройстве останутся.','Выйти',()=>authLogout());
+A.syncUpload=()=>acceptUpload().catch(e=>toast(e.message||'Ошибка'));
+A.syncSkip=()=>skipUpload().catch(e=>toast(e.message||'Ошибка'));
+
+document.addEventListener('submit',e=>{
+ const f=e.target;if(!(f&&f.dataset&&f.dataset.f==='auth'))return;
+ e.preventDefault();e.stopImmediatePropagation();
+ const fd=new FormData(f);const email=String(fd.get('email')||'').trim();const password=String(fd.get('password')||'');
+ const mode=(e.submitter&&e.submitter.value)||'login';
+ (async()=>{
+  try{
+   if(mode==='register')await authRegister(email,password);else await authLogin(email,password);
+   toast(mode==='register'?'Аккаунт создан':'Вы вошли');render();
+   if(syncOffer){/* stay on account */}else startSyncLoop();
+  }catch(err){toast(err.message||'Ошибка');setSyncStatus('err',err.message)}
+ })();
+},true);
+
+// Hook deletes for tombstones — wrap common removers via A after they mutate is hard; patch snap-based paths:
+const _delTask=typeof delTask==='function'?delTask:null;
+// Wrap remove helpers used widely
+(function(){
+ const wrapDel=k=>{
+  const orig=A[k];if(!orig)return;
+  A[k]=function(el,e){
+   // capture ids before
+   return orig.call(this,el,e);
+  };
+ };
+})();
+// Better: observe array length changes is heavy. Stamp tombstones in known delete actions by wrapping.
+const delWrap=(name,getIds)=>{
+ const o=A[name];if(!o)return;
+ A[name]=function(el,e){
+  let ids=[];try{ids=getIds(el)||[]}catch(ex){}
+  const r=o.call(this,el,e);
+  // ask() is async — for confirm dialogs, tomb after confirm is inside; patch those specifically below
+  return r;
+ };
+};
+
+// Patch ask-based deletes by intercepting after toast undo pattern is complex.
+// Instead: monkey-patch Array splice on tracked arrays? Too magic.
+// Use Mutation via wrapping save after detecting removals with a weak snapshot:
+let _snapArr=null;
+function snapArr(){ _snapArr={}; ARR_E.forEach(k=>_snapArr[k]=new Set((S[k]||[]).map(x=>String(x.id)))); }
+function diffTomb(){
+ if(!_snapArr)return;
+ ARR_E.forEach(k=>{
+  const now=new Set((S[k]||[]).map(x=>String(x.id)));
+  _snapArr[k].forEach(id=>{if(!now.has(id))tomb(k,id)});
+ });
+ _snapArr=null;
+}
+const _ask=ask;
+ask=function(title,text,ok,fn){
+ return _ask(title,text,ok,function(){snapArr();try{fn()}finally{diffTomb()}});
+};
+// Also for immediate deletes without ask (rare): wrap save? Already scheduled.
+// For A.del that splices immediately:
+['dDel'].forEach(n=>{
+ const o=A[n];if(!o)return;
+ A[n]=function(el,e){snapArr();const r=o.call(this,el,e);diffTomb();return r};
+});
+
+document.addEventListener('visibilitychange',()=>{if(!document.hidden&&syncMeta.token)doSync('focus')});
+window.addEventListener('online',()=>{if(syncMeta.token)doSync('online')});
+
+const _setTheme=A.setTheme;if(_setTheme)A.setTheme=function(el){const r=_setTheme.call(this,el);markOne('settings');scheduleSync();return r};
+const _setAccent=A.setAccent;if(_setAccent)A.setAccent=function(el){const r=_setAccent.call(this,el);markOne('settings');scheduleSync();return r};
+const _setBool=A.setBool;if(_setBool)A.setBool=function(el){const r=_setBool.call(this,el);markOne('settings');scheduleSync();return r};
+
+if(syncMeta.token)setTimeout(()=>startSyncLoop(),800);
+
 /* ===== запуск ===== */
 let lastDay=todayS();
 setInterval(()=>{const t=todayS();if(t!==lastDay){lastDay=t;ui.calSel=t;render()}else if(ui.view==='today'&&!D&&!dr&&!sw&&document.activeElement.tagName!=='INPUT'&&new Date().getSeconds()<1)render()},1000);

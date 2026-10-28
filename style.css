@@ -675,3 +675,17 @@ body:has(.selbar) .toast{bottom:calc(220px + var(--safe-b))}
 .task.done .chk,.hwr .chk.on{animation:chkpop .35s cubic-bezier(.3,1.6,.5,1)}
 @keyframes chkpop{0%{transform:scale(.7)}100%{transform:scale(1)}}
 .rm *,.rm *::before,.rm *::after{animation-duration:.01ms!important;animation-delay:0s!important;animation-iteration-count:1!important;transition-duration:.01ms!important}
+
+/* v6 account */
+.acct .acct-st{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600}
+.acct .dot{width:8px;height:8px;border-radius:50%;background:var(--ink2);display:inline-block}
+.acct .dot.ok{background:#3D8B5C}
+.acct .dot.connecting,.acct .dot.syncing{background:#C49A3A;animation:pulse 1.2s infinite}
+.acct .dot.err{background:#C2412D}
+.acct .dot.out{background:var(--ink2)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.authf .rowbtns,.rowbtns{display:flex;flex-wrap:wrap;gap:8px;margin-top:4px}
+.btn.primary{background:var(--acc);color:var(--on-acc,#fff);border:0}
+.card.warn{border-color:color-mix(in srgb,var(--acc) 35%, var(--line))}
+.set-row .rowbtn small{display:block;font-weight:500;color:var(--ink2);margin-top:2px;font-size:12px;letter-spacing:0;text-transform:none}
+.rm .acct .dot.connecting,.rm .acct .dot.syncing{animation:none}
