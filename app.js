@@ -1544,7 +1544,7 @@ async function doSync(reason){
   setSyncStatus('err',e.name==='AbortError'?'подключение…':(e.message||'Ошибка сети'));
  }finally{syncBusy=false;if(syncQueued){syncQueued=false;setTimeout(()=>doSync('queue'),80)}}
 }
-function scheduleSyncfunction scheduleSync(ms){
+function scheduleSync(ms){
  if(!syncMeta.token)return;
  clearTimeout(syncTimer);
  syncTimer=setTimeout(()=>doSync('debounce'),ms==null?1200:ms);
