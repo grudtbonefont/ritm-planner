@@ -18,6 +18,37 @@ const WDF=['воскресенье','понедельник','вторник','�
 const cap=s=>s.charAt(0).toUpperCase()+s.slice(1);
 const tmin=t=>{if(!t)return null;const[h,m]=t.split(':').map(Number);return h*60+m};
 const mstr=m=>`${pad(Math.floor(m/60)%24)}:${pad(m%60)}`;
+const normHHMM=t=>{if(t==null||t==='')return'';const s=String(t).trim();let m=s.match(/^(\d{1,2})[:.](\d{1,2})$/);if(m){const h=Math.min(23,+m[1]),mi=Math.min(59,+m[2]);return pad(h)+':'+pad(mi)}m=s.match(/^(\d{1,2})$/);return m?pad(Math.min(23,+m[1]))+':00':''};
+const autoColonHHMM=raw=>{const d=String(raw||'').replace(/\D/g,'').slice(0,4);return d.length<=2?d:d.slice(0,2)+':'+d.slice(2)};
+const hhmmOptsH=(sel,empty)=>{let o=empty?`<option value="">––</option>`:'';for(let i=0;i<24;i++){const v=pad(i);o+=`<option value="${v}"${v===sel?' selected':''}>${v}</option>`}return o};
+const hhmmOptsM=(sel,empty)=>{const set=new Set([...Array(12)].map((_,i)=>pad(i*5)));if(sel)set.add(sel);let o=empty?`<option value="">––</option>`:'';[...set].sort().forEach(v=>{o+=`<option value="${v}"${v===sel?' selected':''}>${v}</option>`});return o};
+/** 24-часовой HH:MM без AM/PM. attrs: {ch,k} или {m} для листа; empty:true — можно очистить */
+function hhmmHTML(val,attrs={}){
+ const v=normHHMM(val),empty=attrs.empty!==false;
+ const h=v?v.slice(0,2):'',m=v?v.slice(3,5):'';
+ const data=attrs.m!=null?`data-hhmm-m="${attrs.m}"`:`data-hhmm-ch="${attrs.ch||''}" data-k="${esc(attrs.k||'')}"`;
+ const hid=attrs.m!=null?`<input type="hidden" data-m="${attrs.m}" value="${v}">`:'';
+ return`<div class="hhmm${attrs.cls?' '+attrs.cls:''}" ${data}>${hid}<input type="text" class="hhmm-in" inputmode="numeric" maxlength="5" placeholder="00:00" value="${v}" autocomplete="off" spellcheck="false" aria-label="Время 00:00–23:59"><div class="hhmm-wheels"><select class="hhmm-h" aria-label="Часы">${hhmmOptsH(h,empty)}</select><span class="hhmm-colon">:</span><select class="hhmm-m" aria-label="Минуты">${hhmmOptsM(m,empty)}</select></div></div>`;
+}
+function hhmmCommit(root,from){
+ if(!root)return;
+ let v='';
+ if(from==='sel'){
+  const h=$('.hhmm-h',root)?.value, m=$('.hhmm-m',root)?.value;
+  v=(h!==''&&h!=null&&m!==''&&m!=null)?normHHMM(h+':'+m):'';
+ }else{
+  const raw=$('.hhmm-in',root)?.value||'';
+  v=raw.trim()===''?'':normHHMM(autoColonHHMM(raw).length===5?autoColonHHMM(raw):raw);
+ }
+ const inp=$('.hhmm-in',root);if(inp)inp.value=v;
+ const hs=$('.hhmm-h',root),ms=$('.hhmm-m',root);
+ if(v){const[hh,mm]=v.split(':');if(hs)hs.value=hh;if(ms){if(![...ms.options].some(o=>o.value===mm)){const o=document.createElement('option');o.value=mm;o.textContent=mm;ms.appendChild(o)}ms.value=mm}}
+ else{if(hs&&[...hs.options].some(o=>o.value===''))hs.value='';if(ms&&[...ms.options].some(o=>o.value===''))ms.value=''}
+ const hid=$('input[type=hidden][data-m]',root);if(hid)hid.value=v;
+ const ch=root.dataset.hhmmCh;
+ if(ch==='hT'){const h=H(todayS());h[root.dataset.k]=v;save();render();return}
+ if(ch==='dayT'){if(!v)return;S.settings[root.dataset.k]=v;if(tmin(S.settings.dayEnd)<=tmin(S.settings.dayStart))toast('Конец дня должен быть позже начала');save();toast('Сохранено')}
+}
 const fmtDate=s=>{if(!s)return'';const t=todayS();if(s===t)return'Сегодня';if(s===addD(t,1))return'Завтра';if(s===addD(t,-1))return'Вчера';const d=pd(s);return`${d.getDate()} ${MONG[d.getMonth()]}${d.getFullYear()!==new Date().getFullYear()?' '+d.getFullYear():''}`};
 const fmtLong=s=>{const d=pd(s);return`${cap(WDF[d.getDay()])}, ${d.getDate()} ${MONG[d.getMonth()]}`};
 const vib=n=>{try{navigator.vibrate&&navigator.vibrate(n)}catch(e){}};
@@ -430,8 +461,8 @@ V.settings=()=>{
   <div class="set-row"><span class="lbl">Уведомления<small>${np==='unsupported'?'Не поддерживается этим браузером':np==='denied'?'Запрещены в настройках браузера':'Задачи со временем и события (за 10 мин)'}</small></span><button class="tog${s.notify&&np==='granted'?' on':''}" data-a="setNotify" aria-label="Уведомления"></button></div>
  </div>
  <h3 class="sec">День и энергия</h3><div class="set">
-  <div class="set-row"><span class="lbl">Начало дня</span><input class="tinp" type="time" data-ch="dayT" data-k="dayStart" value="${s.dayStart}"></div>
-  <div class="set-row"><span class="lbl">Конец дня</span><input class="tinp" type="time" data-ch="dayT" data-k="dayEnd" value="${s.dayEnd}"></div>
+  <div class="set-row"><span class="lbl">Начало дня</span>${hhmmHTML(s.dayStart,{ch:'dayT',k:'dayStart',empty:false,cls:'tinp-hhmm'})}</div>
+  <div class="set-row"><span class="lbl">Конец дня</span>${hhmmHTML(s.dayEnd,{ch:'dayT',k:'dayEnd',empty:false,cls:'tinp-hhmm'})}</div>
   <div class="set-row"><span class="lbl">Ёмкость дня, часов<small>Сколько реально успеть, кроме встреч</small></span><input class="num" type="number" min="1" max="16" data-ch="cap" value="${s.capacity}"></div>
   <div class="set-row"><span class="lbl">Пик энергии<small>Сюда встают тяжёлые задачи</small></span><div class="seg" style="min-width:190px">${[['morning','Утро'],['day','День'],['evening','Вечер']].map(([k,v])=>`<button class="${s.peak===k?'on':''}" data-a="setPeak" data-v="${k}">${v}</button>`).join('')}</div></div>
  </div>
@@ -505,7 +536,7 @@ F.choose=()=>`<h2 class="sh-title">Добавить</h2><div class="chooser">
  <button data-a="chooseNew" data-v="cd"><span class="ti">${I('hourglass')}</span><span>Отсчёт<small>Сколько дней до важной даты</small></span></button></div>`;
 F.task=()=>`<h2 class="sh-title">${D._new?'Новая задача':'Задача'}</h2>
  <div class="field"><input class="inp big" data-m="title" data-auto placeholder="Что нужно сделать?" value="${esc(D.title)}" maxlength="200"></div>
- <div class="two"><div class="field"><label>Дата</label><input class="inp" type="date" data-m="date" value="${D.date||''}"></div><div class="field"><label>Время</label><input class="inp" type="time" data-m="time" value="${D.time||''}"></div></div>
+ <div class="two"><div class="field"><label>Дата</label><input class="inp" type="date" data-m="date" value="${D.date||''}"></div><div class="field"><label>Время</label>${hhmmHTML(D.time,{m:'time'})}</div></div>
  <div class="chips" style="margin:-4px -20px 14px">${[['Сегодня',todayS()],['Завтра',addD(todayS(),1)],['Через неделю',addD(todayS(),7)],['Без даты','']].map(([n,v])=>`<button class="chip${(D.date||'')===v?' on':''}" data-a="dSet" data-k="date" data-v="${v}">${n}</button>`).join('')}</div>
  <div class="field"><label>Приоритет</label>${seg('prio',[[0,'Нет'],[1,'Низкий'],[2,'Средний'],[3,'Высокий']],D.prio)}</div>
  <div class="field"><label>Длительность</label>${seg('est',[[0,'—'],[15,'15м'],[30,'30м'],[60,'1ч'],[90,'1,5ч'],[120,'2ч']],D.est||0)}</div>
@@ -520,7 +551,7 @@ F.task=()=>`<h2 class="sh-title">${D._new?'Новая задача':'Задач�
 F.event=()=>`<h2 class="sh-title">${D._new?'Новое событие':'Событие'}</h2>
  <div class="field"><input class="inp big" data-m="title" data-auto placeholder="Название" value="${esc(D.title)}" maxlength="200"></div>
  <div class="field"><label>Дата</label><input class="inp" type="date" data-m="date" value="${D.date}"></div>
- <div class="two"><div class="field"><label>Начало</label><input class="inp" type="time" data-m="start" value="${D.start}"></div><div class="field"><label>Конец</label><input class="inp" type="time" data-m="end" value="${D.end}"></div></div>
+ <div class="two"><div class="field"><label>Начало</label>${hhmmHTML(D.start,{m:'start',empty:false})}</div><div class="field"><label>Конец</label>${hhmmHTML(D.end,{m:'end',empty:false})}</div></div>
  <div class="chips" style="margin:-4px -20px 14px">${[15,30,45,60,90,120].map(m=>`<button class="chip" data-a="dDur" data-v="${m}">${m<60?m+' мин':m/60+' ч'}</button>`).join('')}</div>
  <div class="field"><label>Цвет</label>${swatches(D.color)}</div>
  <div class="togrow"><span>Напомнить за 10 минут<small>Если уведомления включены</small></span><button class="tog${D.remind?' on':''}" data-a="dTog" data-k="remind"></button></div>
@@ -533,7 +564,7 @@ F.habit=()=>{
  <div class="field"><label>Название</label><input class="inp big" data-m="name" ${D._new?'data-auto':''} placeholder="Например, «Зарядка»" value="${esc(D.name)}" maxlength="60"></div>
  <div class="field"><label>Символ</label><div class="icons">${HICONS.map(c=>`<button class="${D.icon===c?'on':''}" data-a="dSet" data-k="icon" data-v="${c}">${c}</button>`).join('')}</div></div>
  <div class="field"><label>Цвет</label>${swatches(D.color)}</div>
- <div class="field"><label>Напомнить в · если ещё не отмечено</label><input class="inp" type="time" data-m="time" value="${D.time||''}"></div>
+ <div class="field"><label>Напомнить в · если ещё не отмечено</label>${hhmmHTML(D.time,{m:'time'})}</div>
  <div class="btnrow"><button class="btn pri" data-a="dSave">${D._new?'Добавить':'Сохранить'}</button></div>${delBtn('привычку')}`;
 };
 F.goal=()=>`<h2 class="sh-title">${D._new?'Новая цель':'Цель'}</h2>
@@ -713,6 +744,18 @@ document.addEventListener('change',e=>{
  if(k==='cap'){S.settings.capacity=Math.max(1,Math.min(16,Math.round(Number(el.value)||6)));el.value=S.settings.capacity;save();toast('Сохранено')}
  if(k==='pomo'){const v=Math.max(1,Math.min(el.dataset.k==='rounds'?12:120,Math.round(Number(el.value)||1)));S.settings.pomo[el.dataset.k]=v;const t=T();if(!t.running)t.remain=dur(t.mode);save();toast('Сохранено')}
 });
+
+document.addEventListener('input',e=>{
+ const inp=e.target.closest&&e.target.closest('.hhmm-in');if(!inp)return;
+ const next=autoColonHHMM(inp.value);if(next!==inp.value){inp.value=next;try{const n=next.length;inp.setSelectionRange(n,n)}catch(err){}}
+},true);
+document.addEventListener('change',e=>{
+ const t=e.target;if(!t||!t.closest)return;
+ if(t.classList.contains('hhmm-h')||t.classList.contains('hhmm-m')){hhmmCommit(t.closest('.hhmm'),'sel');e.stopPropagation()}
+},true);
+document.addEventListener('focusout',e=>{
+ if(e.target&&e.target.classList&&e.target.classList.contains('hhmm-in'))hhmmCommit(e.target.closest('.hhmm'),'in');
+},true);
 document.addEventListener('keydown',e=>{
  if(e.key==='Escape'&&cfFn){cfClose();return}if(e.key==='Escape'&&D){closeSheet();return}
  if(e.key==='Enter'&&e.target.matches('[data-sub]')){e.preventDefault();const v=e.target.value.trim();if(v){syncD();D.subtasks.push({id:uid(),t:v,done:false});renderSheet();setTimeout(()=>{const n=$('.sheet [data-sub]');n&&n.focus()},10)}}
@@ -1232,7 +1275,7 @@ function studyToday(){
 F.lesson=()=>{const subs=subjects();return`<h2 class="sh-title">${D._new?'Новая пара':'Пара'}</h2>
  <div class="field"><input class="inp big" data-m="subj" data-auto placeholder="Предмет" value="${esc(D.subj)}" maxlength="50" list="subjl"><datalist id="subjl">${subs.map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div>
  <div class="field"><label>День недели</label>${seg('day',[1,2,3,4,5,6,7].map(n=>[n,WDN[n]]),D.day)}</div>
- <div class="field two"><div><label>Начало</label><input class="inp" type="time" data-m="start" value="${D.start}"></div><div><label>Конец</label><input class="inp" type="time" data-m="end" value="${D.end}"></div></div>
+ <div class="field two"><div><label>Начало</label>${hhmmHTML(D.start,{m:'start',empty:false})}</div><div><label>Конец</label>${hhmmHTML(D.end,{m:'end',empty:false})}</div></div>
  <div class="chips" style="margin:-6px -20px 14px">${[45,80,90,95].map(m=>`<button class="chip" data-a="lsDur" data-v="${m}">${m} мин</button>`).join('')}</div>
  <div class="field"><label>Недели</label>${seg('week',Object.entries(PAR).map(([k,v])=>[k,k==='all'?'Каждую':v]),D.week||'all')}</div>
  <div class="field two"><div><label>Аудитория</label><input class="inp" data-m="room" value="${esc(D.room)}" placeholder="301" maxlength="20"></div><div><label>Преподаватель</label><input class="inp" data-m="teacher" value="${esc(D.teacher)}" placeholder="Иванова А. П." maxlength="40"></div></div>
@@ -1248,7 +1291,7 @@ F.exam=()=>`<h2 class="sh-title">${D._new?'Экзамен или дедлайн'
  <div class="field"><input class="inp big" data-m="title" data-auto placeholder="Например, «Экзамен по физике»" value="${esc(D.title)}" maxlength="60"></div>
  <div class="field"><label>Тип</label>${seg('kind',Object.entries(EXK),D.kind)}</div>
  <div class="field"><label>Предмет</label><input class="inp" data-m="subj" value="${esc(D.subj)}" list="subjl2" maxlength="50"><datalist id="subjl2">${subjects().map(s=>`<option value="${esc(s)}">`).join('')}</datalist></div>
- <div class="field two"><div><label>Дата</label><input class="inp" type="date" data-m="date" value="${D.date||''}"></div><div><label>Время</label><input class="inp" type="time" data-m="time" value="${D.time||''}"></div></div>
+ <div class="field two"><div><label>Дата</label><input class="inp" type="date" data-m="date" value="${D.date||''}"></div><div><label>Время</label>${hhmmHTML(D.time,{m:'time'})}</div></div>
  <div class="btnrow"><button class="btn pri" data-a="dSave">${D._new?'Добавить':'Сохранить'}</button></div>${delBtn('экзамен')}`;
 NEW.lesson=(o={})=>{const last=S.lessons[S.lessons.length-1];openSheet('lesson',{id:uid(),subj:'',day:o.day||ui.stDay||wdn(todayS()),start:last?last.end:'09:00',end:last?mstr(Math.min(tmin(last.end)+90,1439)):'10:30',room:'',teacher:'',week:'all',color:COLORS[S.lessons.length%COLORS.length],_new:1,_focus:1})};
 NEW.hw=(o={})=>openSheet('hw',{id:uid(),subj:o.subj||'',text:'',due:o.subj?nextLessonDate(o.subj):null,done:false,created:Date.now(),_new:1,_focus:1});
@@ -1271,8 +1314,8 @@ Object.assign(A,{
 /* --- здоровье --- */
 const H=d=>S.health[d]||(S.health[d]={});
 const MOODE=['😣','😕','😐','🙂','😄'],SQ=['Ужасно','Плохо','Средне','Хорошо','Отлично'];
-function sleepMin(d){const h=S.health[d];if(!h||!h.bed||!h.wake)return 0;let a=tmin(h.bed),b=tmin(h.wake);if(b<=a)b+=1440;const m=b-a;return m>0&&m<=16*60?m:0}
-const hm=m=>`${Math.floor(m/60)} ч${m%60?' '+pad(m%60):''}`;
+function sleepMin(d){const h=S.health[d];if(!h||!h.bed||!h.wake)return 0;const bed=normHHMM(h.bed),wake=normHHMM(h.wake);if(!bed||!wake)return 0;let a=tmin(bed),b=tmin(wake);if(b<=a)b+=1440;const m=b-a;return m>0&&m<=16*60?m:0}
+const hm=m=>m?`${Math.floor(m/60)}:${pad(m%60)} ч`:'—';
 const fmt1=n=>(Math.round(n*10)/10).toString().replace('.',',');
 function healthStrip(){const t=todayS(),h=S.health[t]||{},w=h.water||0,G=S.settings.waterGoal||8,sl=sleepMin(t),m=(S.journal[t]||{}).mood;
  return`<div class="hstrip"><button class="hs-w${w>=G?' ok':''}" data-a="water" data-v="1" aria-label="Плюс стакан воды"><span class="hs-i">${I('drop')}</span><b>${w}<small>/${G}</small></b><em>+</em></button><button data-a="go" data-v="health"><span class="hs-i">${I('bed')}</span><b>${sl?hm(sl):'—'}</b><small>сон</small></button><button data-a="go" data-v="health"><span class="hs-e">${m?MOODE[m-1]:'·'}</span><small>${m?MOOD[m-1].toLowerCase():'настроение'}</small></button></div>`}
@@ -1296,7 +1339,7 @@ V.health=()=>{
  <section class="card water"><div class="w-top"><div><div class="flabel">Вода</div><b class="w-n">${w}<small> / ${G}</small></b><span class="w-ml">${(w*ml/1000).toString().replace('.',',')} л из ${(G*ml/1000).toString().replace('.',',')} л</span></div><div class="w-act"><button class="ib" data-a="water" data-v="-1" aria-label="Минус стакан"${w?'':' disabled'}>${I('minus')}</button><button class="btn pri" data-a="water" data-v="1">${I('plus')} Стакан</button></div></div>
  <div class="glasses">${[...Array(Math.max(G,w))].map((_,i)=>`<i class="${i<w?'on':''}${i>=G?' x':''}"></i>`).join('')}</div>
  <div class="w-goal"><span>Норма</span><button class="ib sm" data-a="wGoal" data-v="-1" aria-label="Меньше">${I('minus')}</button><b>${G}</b><button class="ib sm" data-a="wGoal" data-v="1" aria-label="Больше">${I('plus')}</button><span>стаканов по</span><select data-ch="glassMl" aria-label="Объём стакана">${[200,250,300,330,500].map(v=>`<option${v===ml?' selected':''} value="${v}">${v} мл</option>`).join('')}</select></div></section>
- <section class="card"><div class="flabel">Сон прошлой ночью</div><div class="sleep"><label>Лёг<input type="time" data-ch="hT" data-k="bed" value="${h.bed||''}"></label><span class="sl-d">${sl?hm(sl):'—'}</span><label>Встал<input type="time" data-ch="hT" data-k="wake" value="${h.wake||''}"></label></div>
+ <section class="card"><div class="flabel">Сон прошлой ночью</div><div class="sleep"><label>Лёг${hhmmHTML(h.bed,{ch:'hT',k:'bed',cls:'sleep-hhmm'})}</label><span class="sl-d">${sl?hm(sl):'—'}</span><label>Встал${hhmmHTML(h.wake,{ch:'hT',k:'wake',cls:'sleep-hhmm'})}</label></div>
  <div class="flabel" style="margin-top:16px">Качество</div><div class="scale">${SQ.map((l,i)=>`<button class="${h.sq===i+1?'on':''}" data-a="hSet" data-k="sq" data-v="${i+1}"><b>${i+1}</b>${l}</button>`).join('')}</div></section>
  <section class="card"><div class="flabel">Настроение</div><div class="moods">${MOODE.map((e,i)=>`<button class="${j.mood===i+1?'on':''}" data-a="jSet" data-k="mood" data-v="${i+1}" aria-label="${MOOD[i]}"><span>${e}</span><small>${MOOD[i]}</small></button>`).join('')}</div></section>
  <h3 class="sec">7 дней</h3><div class="card"><div class="flabel">Сон, часов</div>${barChart(7,d=>{const m=sleepMin(d);return m?Math.round(m/6)/10:0})}<div class="flabel" style="margin-top:14px">Вода, стаканов</div>${barChart(7,d=>(S.health[d]||{}).water||0)}<div class="flabel" style="margin-top:14px">Настроение</div><div class="mood7">${[...Array(7)].map((_,i)=>{const d=addD(t,i-6),m=(S.journal[d]||{}).mood;return`<span><b>${m?MOODE[m-1]:'·'}</b><small>${WDS[pd(d).getDay()]}</small></span>`}).join('')}</div></div>
@@ -1401,8 +1444,7 @@ const _fab=A.fab;
 A.fab=(el,e)=>{const v=ui.view;if(v==='study'){const tb=ui.stTab||'tt';return tb==='hw'?NEW.hw():tb==='ex'?NEW.exam():NEW.lesson()}if(v==='money')return NEW.money();if(v==='spaces')return NEW.space();return _fab(el,e)};
 document.addEventListener('submit',e=>{const f=e.target;if(f.dataset&&f.dataset.f==='mq'){e.preventDefault();e.stopImmediatePropagation();mqSubmit(f)}},true);
 document.addEventListener('change',e=>{const el=e.target;
- if(el.dataset.ch==='hT'){const h=H(todayS());h[el.dataset.k]=el.value;save();e.stopImmediatePropagation();render()}
- else if(el.dataset.ch==='glassMl'){S.settings.glassMl=+el.value;save();e.stopImmediatePropagation();render()}},true);
+ if(el.dataset.ch==='glassMl'){S.settings.glassMl=+el.value;save();e.stopImmediatePropagation();render()}},true);
 
 /* ===== v6: аккаунт и синхронизация ===== */
 Object.assign(IC,{
@@ -1623,7 +1665,7 @@ rememberItems();
 V.account=()=>{
  const on=!!syncMeta.token;
  const st=syncStatus==='connecting'||syncStatus==='syncing'?'подключение…'
-  :syncStatus==='ok'?(syncMeta.lastOk?'Синхронизировано · '+new Date(syncMeta.lastOk).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'}):'В сети')
+  :syncStatus==='ok'?(syncMeta.lastOk?'Синхронизировано · '+new Date(syncMeta.lastOk).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',hour12:false}):'В сети')
   :syncStatus==='err'?(syncErr||'Ошибка'):'Не в сети';
  return`${back('settings','Настройки')}<header class="hd" style="margin-top:0"><div><div class="eyebrow">Облако</div><h1 class="display">Аккаунт</h1></div></header>
  <div class="card acct">
